@@ -1,10 +1,11 @@
 /**
  * availability.controller.js
  * Handles availability checking for stylists and time slots.
- * Used by customers to find available appointments.
+ * Updated to support multiple services per booking.
  */
 
 const Appointment = require('../models/Appointment.model');
+const Service = require('../models/Service.model');
 const Stylist = require('../models/Stylist.model');
 const { successResponse, errorResponse } = require('../utils/response');
 const { generateTimeSlots, getDayOfWeek } = require('../utils/helpers');
@@ -13,13 +14,20 @@ const logger = require('../config/logger');
 /**
  * Check availability for a specific stylist on a date
  * GET /api/v1/availability
+ * Updated to check if time slot can accommodate a service (or multiple services)
  */
 const checkAvailability = async (req, res) => {
   try {
-    const { stylistId, date } = req.query;
+    const { stylistId, date, serviceIds } = req.query;
 
     if (!stylistId || !date) {
       return errorResponse(res, 'Stylist ID and date are required.', 400);
+    }
+
+    // Parse service IDs if provided
+    let serviceIdArray = [];
+    if (serviceIds) {
+      serviceIdArray = Array.isArray(serviceIds) ? serviceIds : [serviceIds];
     }
 
     const stylist = await Stylist.findById(stylistId);
@@ -52,17 +60,57 @@ const checkAvailability = async (req, res) => {
       });
     }
 
+    // Get already booked slots
     const bookedSlots = await Appointment.find({
       stylistId,
       date: bookingDate,
       status: { $nin: ['cancelled', 'no_show'] }
-    }).select('startTime');
+    }).select('startTime endTime totalDuration');
 
     const bookedStartTimes = bookedSlots.map(slot => slot.startTime);
 
-    const availableSlots = generateTimeSlots(start, end, 30).filter(
+    // Calculate required duration if services provided
+    let requiredDuration = 0;
+    if (serviceIdArray.length > 0) {
+      const services = await Service.find({ _id: { $in: serviceIdArray } });
+      services.forEach(service => {
+        requiredDuration += service.duration;
+      });
+    }
+
+    // Generate available slots (30-minute intervals)
+    const allSlots = generateTimeSlots(start, end, 30);
+
+    // Filter slots based on booked slots and required duration
+    let availableSlots = allSlots.filter(
       slot => !bookedStartTimes.includes(slot)
     );
+
+    // If checking for a specific service, filter by duration requirement
+    if (requiredDuration > 0) {
+      const slotDuration = 30; // Each slot is 30 minutes
+      const slotsNeeded = Math.ceil(requiredDuration / slotDuration);
+      
+      // Check for consecutive available slots
+      const filteredSlots = [];
+      for (let i = 0; i < availableSlots.length; i++) {
+        let consecutiveCount = 1;
+        for (let j = i + 1; j < availableSlots.length && j < i + slotsNeeded; j++) {
+          // Check if slots are consecutive (30 min apart)
+          const currentMinutes = parseInt(availableSlots[i].split(':')[0]) * 60 + parseInt(availableSlots[i].split(':')[1]);
+          const nextMinutes = parseInt(availableSlots[j].split(':')[0]) * 60 + parseInt(availableSlots[j].split(':')[1]);
+          if (nextMinutes - currentMinutes === 30 * (j - i)) {
+            consecutiveCount++;
+          } else {
+            break;
+          }
+        }
+        if (consecutiveCount >= slotsNeeded) {
+          filteredSlots.push(availableSlots[i]);
+        }
+      }
+      availableSlots = filteredSlots;
+    }
 
     return successResponse(res, 'Availability retrieved successfully.', {
       stylist: {
@@ -72,7 +120,9 @@ const checkAvailability = async (req, res) => {
       date: date,
       workingHours: { start, end },
       availableSlots,
-      totalAvailable: availableSlots.length
+      totalAvailable: availableSlots.length,
+      requiredDuration: requiredDuration || null,
+      serviceCount: serviceIdArray.length || 0
     });
   } catch (error) {
     logger.error('Check availability error:', error);
@@ -86,10 +136,21 @@ const checkAvailability = async (req, res) => {
  */
 const getAvailableSlots = async (req, res) => {
   try {
-    const { date } = req.query;
+    const { date, serviceIds } = req.query;
 
     if (!date) {
       return errorResponse(res, 'Date is required.', 400);
+    }
+
+    // Parse service IDs if provided
+    let serviceIdArray = [];
+    let requiredDuration = 0;
+    if (serviceIds) {
+      serviceIdArray = Array.isArray(serviceIds) ? serviceIds : [serviceIds];
+      const services = await Service.find({ _id: { $in: serviceIdArray } });
+      services.forEach(service => {
+        requiredDuration += service.duration;
+      });
     }
 
     const bookingDate = new Date(date);
@@ -113,9 +174,32 @@ const getAvailableSlots = async (req, res) => {
       }).select('startTime');
 
       const bookedStartTimes = bookedSlots.map(slot => slot.startTime);
-      const availableSlots = generateTimeSlots(start, end, 30).filter(
+      let availableSlots = generateTimeSlots(start, end, 30).filter(
         slot => !bookedStartTimes.includes(slot)
       );
+
+      // If checking for specific services, filter by duration
+      if (requiredDuration > 0) {
+        const slotDuration = 30;
+        const slotsNeeded = Math.ceil(requiredDuration / slotDuration);
+        const filteredSlots = [];
+        for (let i = 0; i < availableSlots.length; i++) {
+          let consecutiveCount = 1;
+          for (let j = i + 1; j < availableSlots.length && j < i + slotsNeeded; j++) {
+            const currentMinutes = parseInt(availableSlots[i].split(':')[0]) * 60 + parseInt(availableSlots[i].split(':')[1]);
+            const nextMinutes = parseInt(availableSlots[j].split(':')[0]) * 60 + parseInt(availableSlots[j].split(':')[1]);
+            if (nextMinutes - currentMinutes === 30 * (j - i)) {
+              consecutiveCount++;
+            } else {
+              break;
+            }
+          }
+          if (consecutiveCount >= slotsNeeded) {
+            filteredSlots.push(availableSlots[i]);
+          }
+        }
+        availableSlots = filteredSlots;
+      }
 
       if (availableSlots.length > 0) {
         availableStylists.push({
@@ -132,7 +216,9 @@ const getAvailableSlots = async (req, res) => {
 
     return successResponse(res, 'Available slots retrieved successfully.', {
       date,
-      stylists: availableStylists
+      stylists: availableStylists,
+      requiredDuration: requiredDuration || null,
+      serviceCount: serviceIdArray.length || 0
     });
   } catch (error) {
     logger.error('Get available slots error:', error);
@@ -146,10 +232,21 @@ const getAvailableSlots = async (req, res) => {
  */
 const getTimeSlotsForDate = async (req, res) => {
   try {
-    const { stylistId, date } = req.query;
+    const { stylistId, date, serviceIds } = req.query;
 
     if (!stylistId || !date) {
       return errorResponse(res, 'Stylist ID and date are required.', 400);
+    }
+
+    // Parse service IDs if provided
+    let serviceIdArray = [];
+    let requiredDuration = 0;
+    if (serviceIds) {
+      serviceIdArray = Array.isArray(serviceIds) ? serviceIds : [serviceIds];
+      const services = await Service.find({ _id: { $in: serviceIdArray } });
+      services.forEach(service => {
+        requiredDuration += service.duration;
+      });
     }
 
     const stylist = await Stylist.findById(stylistId);
@@ -184,15 +281,40 @@ const getTimeSlotsForDate = async (req, res) => {
     }).select('startTime');
 
     const bookedStartTimes = bookedSlots.map(slot => slot.startTime);
-    const availableSlots = generateTimeSlots(start, end, 30).filter(
+    let availableSlots = generateTimeSlots(start, end, 30).filter(
       slot => !bookedStartTimes.includes(slot)
     );
+
+    // If checking for specific services, filter by duration
+    if (requiredDuration > 0) {
+      const slotDuration = 30;
+      const slotsNeeded = Math.ceil(requiredDuration / slotDuration);
+      const filteredSlots = [];
+      for (let i = 0; i < availableSlots.length; i++) {
+        let consecutiveCount = 1;
+        for (let j = i + 1; j < availableSlots.length && j < i + slotsNeeded; j++) {
+          const currentMinutes = parseInt(availableSlots[i].split(':')[0]) * 60 + parseInt(availableSlots[i].split(':')[1]);
+          const nextMinutes = parseInt(availableSlots[j].split(':')[0]) * 60 + parseInt(availableSlots[j].split(':')[1]);
+          if (nextMinutes - currentMinutes === 30 * (j - i)) {
+            consecutiveCount++;
+          } else {
+            break;
+          }
+        }
+        if (consecutiveCount >= slotsNeeded) {
+          filteredSlots.push(availableSlots[i]);
+        }
+      }
+      availableSlots = filteredSlots;
+    }
 
     return successResponse(res, 'Time slots retrieved successfully.', {
       date,
       workingHours: { start, end },
       availableSlots,
-      totalAvailable: availableSlots.length
+      totalAvailable: availableSlots.length,
+      requiredDuration: requiredDuration || null,
+      serviceCount: serviceIdArray.length || 0
     });
   } catch (error) {
     logger.error('Get time slots error:', error);

@@ -13,23 +13,40 @@ const { calculateEndTime, isValidTimeFormat, getDayOfWeek } = require('../utils/
 const logger = require('../config/logger');
 
 /**
- * Create a new booking
+ * Create a new booking with multiple services
  * POST /api/v1/bookings
  * Requires: Authentication
  */
 const createBooking = async (req, res) => {
   try {
-    const { serviceId, stylistId, date, startTime, notes } = req.body;
+    const { serviceIds, stylistId, date, startTime, notes } = req.body;
     const customerId = req.user.id;
 
-    const service = await Service.findById(serviceId);
-    if (!service) {
-      return errorResponse(res, 'Service not found.', 404);
+    // Validate serviceIds is an array
+    if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
+      return errorResponse(res, 'At least one service is required.', 400);
     }
 
-    if (!service.isActive) {
-      return errorResponse(res, 'Service is currently not available.', 400);
+    // Get all services and calculate totals
+    const services = await Service.find({ _id: { $in: serviceIds } });
+    
+    if (services.length !== serviceIds.length) {
+      return errorResponse(res, 'One or more services not found.', 404);
     }
+
+    // Check if all services are active
+    const inactiveServices = services.filter(s => !s.isActive);
+    if (inactiveServices.length > 0) {
+      return errorResponse(res, 'One or more services are currently not available.', 400);
+    }
+
+    // Calculate total duration and price
+    let totalDuration = 0;
+    let totalPrice = 0;
+    services.forEach(service => {
+      totalDuration += service.duration;
+      totalPrice += service.price;
+    });
 
     const stylist = await Stylist.findById(stylistId);
     if (!stylist) {
@@ -56,8 +73,10 @@ const createBooking = async (req, res) => {
       return errorResponse(res, 'Stylist does not work on this day.', 400);
     }
 
-    const endTime = calculateEndTime(startTime, service.duration);
+    // Calculate end time based on total duration
+    const endTime = calculateEndTime(startTime, totalDuration);
 
+    // Check for existing bookings at same time with any service
     const existingBooking = await Appointment.findOne({
       stylistId,
       date: bookingDate,
@@ -69,22 +88,25 @@ const createBooking = async (req, res) => {
       return errorResponse(res, 'Time slot is already booked. Please select another time.', 409);
     }
 
+    // Create the appointment with multiple services
     const appointment = await Appointment.create({
       customerId,
       stylistId,
-      serviceId,
+      serviceIds,
       date: bookingDate,
       startTime,
       endTime,
-      duration: service.duration,
+      totalDuration,
+      totalPrice,
       notes,
       status: APPOINTMENT_STATUS.CONFIRMED
     });
 
+    // Populate user details for response
     const populatedAppointment = await Appointment.findById(appointment._id)
       .populate('customerId', 'firstName lastName email phone')
       .populate('stylistId', 'userId')
-      .populate('serviceId', 'name price duration');
+      .populate('serviceIds', 'name price duration description');
 
     return successResponse(res, 'Booking created successfully.', populatedAppointment, 201);
   } catch (error) {
@@ -111,7 +133,7 @@ const getMyBookings = async (req, res) => {
     const bookings = await Appointment.find(filter)
       .populate('customerId', 'firstName lastName email phone')
       .populate('stylistId', 'userId')
-      .populate('serviceId', 'name price duration')
+      .populate('serviceIds', 'name price duration description')
       .skip(skip)
       .limit(parseInt(limit))
       .sort({ date: -1, startTime: -1 });
@@ -145,7 +167,7 @@ const getBookingById = async (req, res) => {
     const appointment = await Appointment.findById(id)
       .populate('customerId', 'firstName lastName email phone')
       .populate('stylistId', 'userId')
-      .populate('serviceId', 'name price duration');
+      .populate('serviceIds', 'name price duration description');
 
     if (!appointment) {
       return errorResponse(res, 'Booking not found.', 404);
@@ -264,8 +286,8 @@ const rescheduleBooking = async (req, res) => {
       return errorResponse(res, 'Time slot is already booked. Please select another time.', 409);
     }
 
-    const service = await Service.findById(appointment.serviceId);
-    const endTime = calculateEndTime(startTime, service.duration);
+    // Calculate end time based on total duration
+    const endTime = calculateEndTime(startTime, appointment.totalDuration);
 
     appointment.date = bookingDate;
     appointment.startTime = startTime;
@@ -276,7 +298,7 @@ const rescheduleBooking = async (req, res) => {
     const updatedAppointment = await Appointment.findById(id)
       .populate('customerId', 'firstName lastName email phone')
       .populate('stylistId', 'userId')
-      .populate('serviceId', 'name price duration');
+      .populate('serviceIds', 'name price duration description');
 
     return successResponse(res, 'Booking rescheduled successfully.', updatedAppointment);
   } catch (error) {
@@ -304,7 +326,7 @@ const getAllBookings = async (req, res) => {
     const bookings = await Appointment.find(filter)
       .populate('customerId', 'firstName lastName email phone')
       .populate('stylistId', 'userId')
-      .populate('serviceId', 'name price duration')
+      .populate('serviceIds', 'name price duration description')
       .skip(skip)
       .limit(parseInt(limit))
       .sort({ date: -1, startTime: -1 });
@@ -347,7 +369,7 @@ const getStylistBookings = async (req, res) => {
 
     const bookings = await Appointment.find(filter)
       .populate('customerId', 'firstName lastName email phone')
-      .populate('serviceId', 'name price duration')
+      .populate('serviceIds', 'name price duration description')
       .sort({ date: 1, startTime: 1 });
 
     return successResponse(res, 'Stylist bookings retrieved successfully.', bookings);

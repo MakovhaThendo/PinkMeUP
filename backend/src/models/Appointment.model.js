@@ -11,15 +11,18 @@ const AppointmentSchema = new mongoose.Schema({
     ref: 'Stylist',
     required: true
   },
-  serviceId: {
+  // CHANGED: serviceId → serviceIds (array of services)
+  serviceIds: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Service',
     required: true
-  },
+  }],
   date: { type: Date, required: true },
   startTime: { type: String, required: true },
   endTime: { type: String, required: true },
-  duration: { type: Number, required: true },
+  // NEW: total duration and price
+  totalDuration: { type: Number, required: true },
+  totalPrice: { type: Number, required: true },
   status: {
     type: String,
     enum: ['pending', 'confirmed', 'completed', 'cancelled'],
@@ -35,5 +38,12 @@ const AppointmentSchema = new mongoose.Schema({
 
 AppointmentSchema.index({ date: 1, startTime: 1, stylistId: 1 });
 AppointmentSchema.index({ customerId: 1, status: 1 });
+
+// NEW: Virtual field to get service details (populated separately)
+AppointmentSchema.virtual('services', {
+  ref: 'Service',
+  localField: 'serviceIds',
+  foreignField: '_id'
+});
 
 module.exports = mongoose.model('Appointment', AppointmentSchema);
