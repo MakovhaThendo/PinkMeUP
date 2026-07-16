@@ -24,9 +24,9 @@ const BusinessSettingSchema = new mongoose.Schema({
   slotInterval: { type: Number, default: 30, enum: [15, 30, 45, 60] },
   maxBookingsPerSlot: { type: Number, default: 1, min: 1 },
   bookingLeadTime: { type: Number, default: 60, min: 0 },
-  cancellationWindow: { type: Number, default: 1440, min: 0 },
+  cancellationWindow: { type: Number, default: 60, min: 0 },
   timezone: { type: String, default: 'Africa/Johannesburg' },
-  businessName: { type: String, default: 'PinkMeUp Beauty Spa & Academy' }
+  businessName: { type: String, default: 'PinkMeUP Beauty Spa & Academy' }
 }, { timestamps: true });
 
 // Ensure only one settings document exists

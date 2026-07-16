@@ -11,6 +11,7 @@ const { successResponse, errorResponse } = require('../utils/response');
 const { APPOINTMENT_STATUS } = require('../utils/constants');
 const { calculateEndTime, isValidTimeFormat, getDayOfWeek } = require('../utils/helpers');
 const logger = require('../config/logger');
+const emailService = require('../services/email.service');
 
 const getSettings = async () => await BusinessSetting.getSettings();
 
@@ -77,12 +78,23 @@ const createBooking = async (req, res) => {
       totalDuration, totalPrice, notes, status: APPOINTMENT_STATUS.CONFIRMED
     });
 
-    const populated = await Appointment.findById(appointment._id)
+    const populatedAppointment = await Appointment.findById(appointment._id)
       .populate('customerId', 'firstName lastName email phone')
       .populate('stylistId', 'userId')
       .populate('serviceIds', 'name price duration description');
 
-    return successResponse(res, 'Booking created.', populated, 201);
+    // Send confirmation email
+    try {
+      await emailService.sendBookingConfirmation(
+        populatedAppointment,
+        populatedAppointment.customerId,
+        populatedAppointment.serviceIds
+      );
+    } catch (error) {
+      console.error('Email sending failed:', error.message);
+    }
+
+    return successResponse(res, 'Booking created.', populatedAppointment, 201);
   } catch (error) {
     logger.error('Create booking error:', error);
     return errorResponse(res, 'Failed to create booking.', 500);
@@ -166,6 +178,20 @@ const cancelBooking = async (req, res) => {
     appointment.status = APPOINTMENT_STATUS.CANCELLED;
     if (reason) appointment.notes = (appointment.notes || '') + '\nCancellation reason: ' + reason;
     await appointment.save();
+
+    // Populate customer details for email
+    const cancelledAppointment = await Appointment.findById(appointment._id)
+      .populate('customerId', 'firstName lastName email phone');
+
+    // Send cancellation email
+    try {
+      await emailService.sendCancellationEmail(
+        cancelledAppointment,
+        cancelledAppointment.customerId
+      );
+    } catch (error) {
+      console.error('Cancellation email failed:', error.message);
+    }
 
     return successResponse(res, 'Booking cancelled.', appointment);
   } catch (error) {
