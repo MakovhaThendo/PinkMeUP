@@ -1,4 +1,8 @@
-﻿const USER_ROLES = {
+﻿/**
+ * System constants for roles, statuses, and business rules
+ */
+
+const USER_ROLES = {
   CUSTOMER: 'customer',
   STYLIST: 'stylist',
   ADMIN: 'admin'
@@ -10,12 +14,6 @@ const APPOINTMENT_STATUS = {
   COMPLETED: 'completed',
   CANCELLED: 'cancelled',
   NO_SHOW: 'no_show'
-};
-
-const BUSINESS_HOURS = {
-  START: '08:00',
-  END: '18:00',
-  DAYS: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 };
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -35,7 +33,6 @@ const HTTP_STATUS = {
 module.exports = {
   USER_ROLES,
   APPOINTMENT_STATUS,
-  BUSINESS_HOURS,
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
   HTTP_STATUS

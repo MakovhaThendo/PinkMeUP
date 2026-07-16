@@ -1,8 +1,5 @@
 /**
- * report.controller.js
- * Generates reports and analytics for the admin dashboard.
- * Includes booking trends, service popularity, stylist performance,
- * revenue reports, and dashboard statistics.
+ * Report controller - generates analytics and dashboard data (admin only)
  */
 
 const Appointment = require('../models/Appointment.model');
@@ -13,27 +10,16 @@ const { successResponse, errorResponse } = require('../utils/response');
 const { APPOINTMENT_STATUS } = require('../utils/constants');
 const logger = require('../config/logger');
 
-/**
- * Get booking trends over a date range
- * GET /api/v1/admin/reports/booking-trends
- */
 const getBookingTrends = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-
     const filter = {};
     if (startDate) filter.date = { $gte: new Date(startDate) };
     if (endDate) filter.date = { $lte: new Date(endDate) };
 
     const totalBookings = await Appointment.countDocuments(filter);
-    const completedBookings = await Appointment.countDocuments({ 
-      ...filter, 
-      status: APPOINTMENT_STATUS.COMPLETED 
-    });
-    const cancelledBookings = await Appointment.countDocuments({ 
-      ...filter, 
-      status: APPOINTMENT_STATUS.CANCELLED 
-    });
+    const completedBookings = await Appointment.countDocuments({ ...filter, status: APPOINTMENT_STATUS.COMPLETED });
+    const cancelledBookings = await Appointment.countDocuments({ ...filter, status: APPOINTMENT_STATUS.CANCELLED });
 
     const bookingsByStatus = await Appointment.aggregate([
       { $match: filter },
@@ -42,19 +28,20 @@ const getBookingTrends = async (req, res) => {
 
     const bookingsByDay = await Appointment.aggregate([
       { $match: filter },
-      {
-        $group: {
-          _id: { $dayOfWeek: '$date' },
-          count: { $sum: 1 }
-        }
-      },
+      { $group: { _id: { $dayOfWeek: '$date' }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } }
+    ]);
+
+    const revenue = await Appointment.aggregate([
+      { $match: { ...filter, status: APPOINTMENT_STATUS.COMPLETED } },
+      { $group: { _id: null, totalRevenue: { $sum: '$totalPrice' } } }
     ]);
 
     return successResponse(res, 'Booking trends retrieved.', {
       totalBookings,
       completedBookings,
       cancelledBookings,
+      totalRevenue: revenue.length > 0 ? revenue[0].totalRevenue : 0,
       bookingsByStatus,
       bookingsByDay
     });
@@ -64,34 +51,25 @@ const getBookingTrends = async (req, res) => {
   }
 };
 
-/**
- * Get most popular services
- * GET /api/v1/admin/reports/service-popularity
- */
 const getServicePopularity = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-
     const filter = { status: APPOINTMENT_STATUS.COMPLETED };
     if (startDate) filter.date = { $gte: new Date(startDate) };
     if (endDate) filter.date = { $lte: new Date(endDate) };
 
-    const serviceStats = await Appointment.aggregate([
+    const stats = await Appointment.aggregate([
       { $match: filter },
-      {
-        $group: {
-          _id: '$serviceId',
-          count: { $sum: 1 }
-        }
-      },
+      { $unwind: '$serviceIds' },
+      { $group: { _id: '$serviceIds', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 10 }
     ]);
 
-    const serviceIds = serviceStats.map(item => item._id);
+    const serviceIds = stats.map(s => s._id);
     const services = await Service.find({ _id: { $in: serviceIds } });
 
-    const result = serviceStats.map(stat => {
+    const result = stats.map(stat => {
       const service = services.find(s => s._id.toString() === stat._id.toString());
       return {
         serviceId: stat._id,
@@ -108,34 +86,29 @@ const getServicePopularity = async (req, res) => {
   }
 };
 
-/**
- * Get stylist performance metrics
- * GET /api/v1/admin/reports/stylist-performance
- */
 const getStylistPerformance = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-
     const filter = { status: APPOINTMENT_STATUS.COMPLETED };
     if (startDate) filter.date = { $gte: new Date(startDate) };
     if (endDate) filter.date = { $lte: new Date(endDate) };
 
-    const stylistStats = await Appointment.aggregate([
+    const stats = await Appointment.aggregate([
       { $match: filter },
       {
         $group: {
           _id: '$stylistId',
-          completedBookings: { $sum: 1 }
+          completedBookings: { $sum: 1 },
+          totalRevenue: { $sum: '$totalPrice' }
         }
       },
       { $sort: { completedBookings: -1 } }
     ]);
 
-    const stylistIds = stylistStats.map(item => item._id);
-    const stylists = await Stylist.find({ _id: { $in: stylistIds } })
-      .populate('userId', 'firstName lastName');
+    const stylistIds = stats.map(s => s._id);
+    const stylists = await Stylist.find({ _id: { $in: stylistIds } }).populate('userId', 'firstName lastName');
 
-    const result = stylistStats.map(stat => {
+    const result = stats.map(stat => {
       const stylist = stylists.find(s => s._id.toString() === stat._id.toString());
       return {
         stylistId: stat._id,
@@ -143,6 +116,7 @@ const getStylistPerformance = async (req, res) => {
           ? stylist.userId.firstName + ' ' + stylist.userId.lastName
           : 'Unknown',
         completedBookings: stat.completedBookings,
+        totalRevenue: stat.totalRevenue,
         rating: stylist ? stylist.rating : 0
       };
     });
@@ -154,43 +128,23 @@ const getStylistPerformance = async (req, res) => {
   }
 };
 
-/**
- * Get revenue report
- * GET /api/v1/admin/reports/revenue
- */
 const getRevenueReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-
     const filter = { status: APPOINTMENT_STATUS.COMPLETED };
     if (startDate) filter.date = { $gte: new Date(startDate) };
     if (endDate) filter.date = { $lte: new Date(endDate) };
 
-    const completedAppointments = await Appointment.find(filter)
-      .populate('serviceId', 'price');
-
+    const appointments = await Appointment.find(filter).populate('serviceIds', 'price');
     let totalRevenue = 0;
-    completedAppointments.forEach(appointment => {
-      if (appointment.serviceId && appointment.serviceId.price) {
-        totalRevenue += appointment.serviceId.price;
-      }
-    });
+    appointments.forEach(a => totalRevenue += a.totalPrice || 0);
 
     const revenueByDay = await Appointment.aggregate([
       { $match: filter },
       {
-        $lookup: {
-          from: 'services',
-          localField: 'serviceId',
-          foreignField: '_id',
-          as: 'service'
-        }
-      },
-      { $unwind: '$service' },
-      {
         $group: {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-          revenue: { $sum: '$service.price' },
+          revenue: { $sum: '$totalPrice' },
           bookings: { $sum: 1 }
         }
       },
@@ -199,7 +153,7 @@ const getRevenueReport = async (req, res) => {
 
     return successResponse(res, 'Revenue report retrieved.', {
       totalRevenue,
-      totalBookings: completedAppointments.length,
+      totalBookings: appointments.length,
       revenueByDay
     });
   } catch (error) {
@@ -208,17 +162,10 @@ const getRevenueReport = async (req, res) => {
   }
 };
 
-/**
- * Get dashboard statistics
- * GET /api/v1/admin/reports/dashboard
- */
 const getDashboardStats = async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const today = new Date().setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today).setDate(new Date(today).getDate() + 1);
 
     const totalCustomers = await User.countDocuments({ role: 'customer' });
     const totalStylists = await User.countDocuments({ role: 'stylist' });
@@ -229,10 +176,7 @@ const getDashboardStats = async (req, res) => {
       status: { $nin: ['cancelled', 'no_show'] }
     });
 
-    const pendingBookings = await Appointment.countDocuments({
-      status: APPOINTMENT_STATUS.PENDING
-    });
-
+    const pendingBookings = await Appointment.countDocuments({ status: APPOINTMENT_STATUS.PENDING });
     const completedToday = await Appointment.countDocuments({
       date: { $gte: today, $lt: tomorrow },
       status: APPOINTMENT_STATUS.COMPLETED
@@ -240,7 +184,7 @@ const getDashboardStats = async (req, res) => {
 
     const recentBookings = await Appointment.find()
       .populate('customerId', 'firstName lastName')
-      .populate('serviceId', 'name')
+      .populate('serviceIds', 'name')
       .sort({ createdAt: -1 })
       .limit(5);
 

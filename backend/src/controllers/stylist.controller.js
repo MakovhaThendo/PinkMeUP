@@ -1,7 +1,5 @@
 ﻿/**
- * stylist.controller.js
- * Manages stylist profiles including creation, updates,
- * availability management, and retrieval.
+ * Stylist management controller - public read, admin write
  */
 
 const Stylist = require('../models/Stylist.model');
@@ -10,75 +8,48 @@ const { successResponse, errorResponse } = require('../utils/response');
 const { USER_ROLES } = require('../utils/constants');
 const logger = require('../config/logger');
 
-/**
- * Create a stylist profile
- * POST /api/v1/stylists
- * Requires: Admin role
- */
 const createStylist = async (req, res) => {
   try {
-    const { userId, specialization, workingHours } = req.body;
+    const { userId, specialties, workingHours } = req.body;
 
     const user = await User.findById(userId);
-    if (!user) {
-      return errorResponse(res, 'User not found.', 404);
-    }
+    if (!user) return errorResponse(res, 'User not found.', 404);
 
     if (user.role !== USER_ROLES.STYLIST) {
       user.role = USER_ROLES.STYLIST;
       await user.save();
     }
 
-    const existingStylist = await Stylist.findOne({ userId });
-    if (existingStylist) {
-      return errorResponse(res, 'Stylist profile already exists for this user.', 409);
-    }
+    const existing = await Stylist.findOne({ userId });
+    if (existing) return errorResponse(res, 'Stylist profile already exists.', 409);
 
-    const stylist = await Stylist.create({
-      userId,
-      specialization,
-      workingHours
-    });
+    const stylist = await Stylist.create({ userId, specialties });
+    const populated = await Stylist.findById(stylist._id).populate('userId', 'firstName lastName email phone');
 
-    const populatedStylist = await Stylist.findById(stylist._id)
-      .populate('userId', 'firstName lastName email phone');
-
-    return successResponse(res, 'Stylist profile created successfully.', populatedStylist, 201);
+    return successResponse(res, 'Stylist created.', populated, 201);
   } catch (error) {
     logger.error('Create stylist error:', error);
-    return errorResponse(res, 'Failed to create stylist profile.', 500);
+    return errorResponse(res, 'Failed to create stylist.', 500);
   }
 };
 
-/**
- * Get all stylists with pagination
- * GET /api/v1/stylists
- */
 const getStylists = async (req, res) => {
   try {
     const { isAvailable, page = 1, limit = 10 } = req.query;
-
     const filter = {};
     if (isAvailable !== undefined) filter.isAvailable = isAvailable === 'true';
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
-
     const stylists = await Stylist.find(filter)
       .populate('userId', 'firstName lastName email phone')
       .skip(skip)
       .limit(parseInt(limit))
       .sort({ rating: -1 });
-
     const total = await Stylist.countDocuments(filter);
 
-    return successResponse(res, 'Stylists retrieved successfully.', {
+    return successResponse(res, 'Stylists retrieved.', {
       stylists,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
-      }
+      pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / limit) }
     });
   } catch (error) {
     logger.error('Get stylists error:', error);
@@ -86,109 +57,61 @@ const getStylists = async (req, res) => {
   }
 };
 
-/**
- * Get stylist by ID
- * GET /api/v1/stylists/:id
- */
 const getStylistById = async (req, res) => {
   try {
-    const { id } = req.params;
-    const stylist = await Stylist.findById(id)
-      .populate('userId', 'firstName lastName email phone');
-
-    if (!stylist) {
-      return errorResponse(res, 'Stylist not found.', 404);
-    }
-
-    return successResponse(res, 'Stylist retrieved successfully.', stylist);
+    const stylist = await Stylist.findById(req.params.id).populate('userId', 'firstName lastName email phone');
+    if (!stylist) return errorResponse(res, 'Stylist not found.', 404);
+    return successResponse(res, 'Stylist retrieved.', stylist);
   } catch (error) {
-    logger.error('Get stylist by ID error:', error);
+    logger.error('Get stylist error:', error);
     return errorResponse(res, 'Failed to retrieve stylist.', 500);
   }
 };
 
-/**
- * Update stylist profile
- * PUT /api/v1/stylists/:id
- * Requires: Admin role
- */
 const updateStylist = async (req, res) => {
   try {
     const { id } = req.params;
-    const { specialization, workingHours, isAvailable, rating } = req.body;
+    const { specialties, isAvailable, rating } = req.body;
 
     const stylist = await Stylist.findById(id);
-    if (!stylist) {
-      return errorResponse(res, 'Stylist not found.', 404);
-    }
+    if (!stylist) return errorResponse(res, 'Stylist not found.', 404);
 
-    if (specialization) stylist.specialization = specialization;
-    if (workingHours) stylist.workingHours = workingHours;
+    if (specialties) stylist.specialties = specialties;
     if (isAvailable !== undefined) stylist.isAvailable = isAvailable;
     if (rating !== undefined) stylist.rating = rating;
-
     await stylist.save();
 
-    const updatedStylist = await Stylist.findById(id)
-      .populate('userId', 'firstName lastName email phone');
-
-    return successResponse(res, 'Stylist updated successfully.', updatedStylist);
+    const updated = await Stylist.findById(id).populate('userId', 'firstName lastName email phone');
+    return successResponse(res, 'Stylist updated.', updated);
   } catch (error) {
     logger.error('Update stylist error:', error);
     return errorResponse(res, 'Failed to update stylist.', 500);
   }
 };
 
-/**
- * Delete stylist profile
- * DELETE /api/v1/stylists/:id
- * Requires: Admin role
- */
 const deleteStylist = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    const stylist = await Stylist.findById(id);
-    if (!stylist) {
-      return errorResponse(res, 'Stylist not found.', 404);
-    }
-
+    const stylist = await Stylist.findById(req.params.id);
+    if (!stylist) return errorResponse(res, 'Stylist not found.', 404);
     await stylist.deleteOne();
-
-    return successResponse(res, 'Stylist deleted successfully.');
+    return successResponse(res, 'Stylist deleted.');
   } catch (error) {
     logger.error('Delete stylist error:', error);
     return errorResponse(res, 'Failed to delete stylist.', 500);
   }
 };
 
-/**
- * Get stylist availability for a specific date
- * GET /api/v1/stylists/:id/availability
- */
 const getStylistAvailability = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { date } = req.query;
-
-    const stylist = await Stylist.findById(id);
-    if (!stylist) {
-      return errorResponse(res, 'Stylist not found.', 404);
-    }
-
-    if (!stylist.isAvailable) {
-      return successResponse(res, 'Stylist availability retrieved.', {
-        available: false,
-        message: 'Stylist is currently not available.'
-      });
-    }
+    const stylist = await Stylist.findById(req.params.id);
+    if (!stylist) return errorResponse(res, 'Stylist not found.', 404);
 
     return successResponse(res, 'Stylist availability retrieved.', {
-      available: true,
-      workingHours: stylist.workingHours
+      available: stylist.isAvailable,
+      specialties: stylist.specialties
     });
   } catch (error) {
-    logger.error('Get stylist availability error:', error);
+    logger.error('Get availability error:', error);
     return errorResponse(res, 'Failed to retrieve availability.', 500);
   }
 };

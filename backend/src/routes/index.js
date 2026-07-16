@@ -1,5 +1,4 @@
 ﻿/**
- * index.js
  * Main router - registers all route modules
  * Base path: /api/v1
  */
@@ -14,7 +13,6 @@ const stylistRoutes = require('./stylist.routes');
 const bookingRoutes = require('./booking.routes');
 const adminRoutes = require('./admin.routes');
 
-// Register all route modules
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/services', serviceRoutes);
@@ -22,7 +20,6 @@ router.use('/stylists', stylistRoutes);
 router.use('/bookings', bookingRoutes);
 router.use('/admin', adminRoutes);
 
-// API information endpoint
 router.get('/', (req, res) => {
   res.json({
     success: true,

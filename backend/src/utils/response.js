@@ -1,4 +1,8 @@
-﻿const successResponse = (res, message, data = null, statusCode = 200) => {
+﻿/**
+ * Standardized API response helpers
+ */
+
+const successResponse = (res, message, data = null, statusCode = 200) => {
   return res.status(statusCode).json({
     success: true,
     message,

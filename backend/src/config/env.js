@@ -1,26 +1,16 @@
 ﻿/**
- * env.js
  * Environment configuration and validation
+ * Loads .env file and validates required variables
  */
 
 const dotenv = require('dotenv');
 dotenv.config();
 
-const requiredEnvVars = [
-  'NODE_ENV',
-  'PORT',
-  'MONGODB_URI',
-  'JWT_SECRET',
-  'JWT_EXPIRES_IN'
-];
+const required = ['NODE_ENV', 'PORT', 'MONGODB_URI', 'JWT_SECRET', 'JWT_EXPIRES_IN'];
+const missing = required.filter(key => !process.env[key] || process.env[key].trim() === '');
 
-const missingVars = requiredEnvVars.filter(
-  (varName) => !process.env[varName] || process.env[varName].trim() === ''
-);
-
-if (missingVars.length > 0) {
-  console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
-  console.error('Please check your .env file');
+if (missing.length) {
+  console.error(`Missing required env vars: ${missing.join(', ')}`);
   process.exit(1);
 }
 
@@ -30,6 +20,7 @@ module.exports = {
   MONGODB_URI: process.env.MONGODB_URI,
   JWT_SECRET: process.env.JWT_SECRET,
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
+  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
   EMAIL: {
     FROM: process.env.EMAIL_FROM,
     HOST: process.env.EMAIL_HOST,
@@ -37,7 +28,6 @@ module.exports = {
     USER: process.env.EMAIL_USER,
     PASS: process.env.EMAIL_PASS
   },
-  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
   BUSINESS: {
     NAME: 'PinkMeUp Beauty Spa & Academy',
     EMAIL: 'pinkmeup01@gmail.com',

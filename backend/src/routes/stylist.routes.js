@@ -1,5 +1,4 @@
 ﻿/**
- * stylist.routes.js
  * Stylist management routes - public read, admin write
  */
 
@@ -10,31 +9,14 @@ const { validate } = require('../middleware/validation');
 const { stylistValidation, idParamValidation, paginationValidation } = require('../validators');
 const stylistController = require('../controllers/stylist.controller');
 
-// Public routes (no authentication required)
+// Public routes
 router.get('/', validate(paginationValidation), stylistController.getStylists);
 router.get('/:id', validate(idParamValidation), stylistController.getStylistById);
 router.get('/:id/availability', stylistController.getStylistAvailability);
 
-// Admin routes (require authentication and admin role)
-router.post('/',
-  authenticate,
-  authorize('admin'),
-  validate(stylistValidation),
-  stylistController.createStylist
-);
-
-router.put('/:id',
-  authenticate,
-  authorize('admin'),
-  validate(idParamValidation),
-  stylistController.updateStylist
-);
-
-router.delete('/:id',
-  authenticate,
-  authorize('admin'),
-  validate(idParamValidation),
-  stylistController.deleteStylist
-);
+// Admin routes
+router.post('/', authenticate, authorize('admin'), validate(stylistValidation), stylistController.createStylist);
+router.put('/:id', authenticate, authorize('admin'), validate(idParamValidation), stylistController.updateStylist);
+router.delete('/:id', authenticate, authorize('admin'), validate(idParamValidation), stylistController.deleteStylist);
 
 module.exports = router;

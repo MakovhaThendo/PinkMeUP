@@ -1,5 +1,4 @@
 ﻿/**
- * auth.routes.js
  * Authentication routes - public and protected
  */
 
@@ -10,11 +9,11 @@ const { validate } = require('../middleware/validation');
 const { registerValidation, loginValidation } = require('../validators');
 const authController = require('../controllers/auth.controller');
 
-// Public routes (no authentication required)
+// Public routes
 router.post('/register', validate(registerValidation), authController.register);
 router.post('/login', validate(loginValidation), authController.login);
 
-// Protected routes (require authentication)
+// Protected routes
 router.get('/profile', authenticate, authController.getProfile);
 router.put('/profile', authenticate, authController.updateProfile);
 router.put('/change-password', authenticate, authController.changePassword);

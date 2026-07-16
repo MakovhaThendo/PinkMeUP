@@ -1,7 +1,6 @@
 /**
- * app.js
- * Express application setup
- * Configures middleware, routes, and error handling
+ * Express app configuration
+ * Sets up middleware, routes, and error handling
  */
 
 const express = require('express');
@@ -11,66 +10,37 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const routes = require('./routes');
 const { errorHandler, notFound } = require('./middleware/error');
-const logger = require('./config/logger');
 
 const app = express();
 
 // Security middleware
 app.use(helmet());
-
-// CORS configuration
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true,
-  optionsSuccessStatus: 200
-}));
-
-// Compression middleware - compress responses
+app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000', credentials: true }));
 app.use(compression());
 
-// Body parsing middleware
+// Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting to prevent abuse
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: {
-    success: false,
-    message: 'Too many requests from this IP, please try again later.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-app.use('/api', limiter);
+// Rate limiting
+app.use('/api', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { success: false, message: 'Too many requests, please try again later.' }
+}));
 
-// Health check endpoint (no authentication required)
+// Health check
 app.get('/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
-  });
+  res.json({ success: true, status: 'healthy', timestamp: new Date().toISOString(), uptime: process.uptime() });
 });
 
 // API routes
 app.use('/api/v1', routes);
 
-// 404 handler for unmatched routes
+// 404 handler
 app.use(notFound);
 
 // Global error handler
 app.use(errorHandler);
-
-// Graceful shutdown handling
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM signal received: closing HTTP server');
-  app.close(() => {
-    logger.info('HTTP server closed');
-  });
-});
 
 module.exports = app;

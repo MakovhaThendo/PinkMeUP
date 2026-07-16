@@ -1,4 +1,8 @@
-﻿const mongoose = require('mongoose');
+﻿/**
+ * Service model - salon services with pricing and duration
+ */
+
+const mongoose = require('mongoose');
 
 const ServiceSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
