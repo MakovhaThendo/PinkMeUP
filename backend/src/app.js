@@ -29,9 +29,31 @@ app.use('/api', rateLimit({
   message: { success: false, message: 'Too many requests, please try again later.' }
 }));
 
+// Root route - handles / and returns API info
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'PinkMeUP Booking System API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/health',
+      api: '/api/v1',
+      documentation: '/api/v1'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ success: true, status: 'healthy', timestamp: new Date().toISOString(), uptime: process.uptime() });
+  res.json({ 
+    success: true, 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 // API routes
