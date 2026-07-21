@@ -97,7 +97,47 @@ const sendCancellationEmail = async (booking, customer) => {
   }
 };
 
+/**
+ * Send password reset email
+ */
+const sendPasswordResetEmail = async (email, resetToken, firstName) => {
+  try {
+    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+    
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #ff6b9d; padding: 20px; text-align: center; color: white;">
+          <h1 style="margin: 0;">Reset Your Password</h1>
+        </div>
+        <div style="padding: 30px; border: 1px solid #ddd; border-top: none;">
+          <p>Dear <strong>${firstName}</strong>,</p>
+          <p>We received a request to reset your password.</p>
+          <p style="text-align: center; margin: 30px 0;">
+            <a href="${resetLink}" style="background: #ff6b9d; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px;">Reset Password</a>
+          </p>
+          <p>This link expires in 1 hour.</p>
+          <p>If you didn't request this, ignore this email.</p>
+          <p>Kind regards,<br><strong>The PinkMeUP Team</strong></p>
+        </div>
+      </div>
+    `;
+
+    await transporter.sendMail({
+      from: `"PinkMeUP" <${process.env.EMAIL_FROM}>`,
+      to: email,
+      subject: 'Reset Your Password - PinkMeUP',
+      html: html
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Password reset email error:', error.message);
+    return false;
+  }
+};
+
 module.exports = {
   sendBookingConfirmation,
-  sendCancellationEmail
+  sendCancellationEmail,
+  sendPasswordResetEmail  
 };

@@ -53,6 +53,16 @@ const stylistValidation = [
   body('specialties').optional().isArray().withMessage('Specialties must be an array')
 ];
 
+// Password reset validations
+const forgotPasswordValidation = [
+  body('email').trim().notEmpty().withMessage('Email is required').isEmail().withMessage('Valid email required').normalizeEmail()
+];
+
+const resetPasswordValidation = [
+  body('token').notEmpty().withMessage('Reset token is required'),
+  body('newPassword').notEmpty().withMessage('New password is required').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+];
+
 // Common validations
 const idParamValidation = [
   param('id').isMongoId().withMessage('Invalid ID format')
@@ -71,6 +81,8 @@ module.exports = {
   cancelValidation,
   serviceValidation,
   stylistValidation,
+  forgotPasswordValidation,    
+  resetPasswordValidation,     
   idParamValidation,
   paginationValidation
 };

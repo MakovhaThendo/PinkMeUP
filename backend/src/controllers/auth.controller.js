@@ -3,9 +3,11 @@
  */
 
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const User = require('../models/User.model');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../config/logger');
+const emailService = require('../services/email.service');
 
 const generateToken = (userId) => {
   return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
@@ -129,10 +131,52 @@ const changePassword = async (req, res) => {
   }
 };
 
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) return errorResponse(res, 'No user found with this email.', 404);
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = Date.now() + 3600000;
+    await user.save();
+
+    await emailService.sendPasswordResetEmail(email, resetToken, user.firstName);
+    return successResponse(res, 'Password reset link sent to your email.');
+  } catch (error) {
+    logger.error('Forgot password error:', error);
+    return errorResponse(res, 'Failed to send reset email.', 500);
+  }
+};
+
+const resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+    if (!user) return errorResponse(res, 'Invalid or expired reset token.', 400);
+
+    user.password = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    return successResponse(res, 'Password reset successfully. Please login.');
+  } catch (error) {
+    logger.error('Reset password error:', error);
+    return errorResponse(res, 'Failed to reset password.', 500);
+  }
+};
+
 module.exports = {
   register,
   login,
   getProfile,
   updateProfile,
-  changePassword
+  changePassword,
+  forgotPassword,
+  resetPassword
 };
